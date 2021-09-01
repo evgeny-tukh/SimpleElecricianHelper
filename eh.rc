@@ -1,5 +1,16 @@
 #include "resource.h"
 
+IDR_MAINMENU MENU
+BEGIN
+    POPUP "&File"
+    BEGIN
+        MENUITEM "&Load...", ID_LOAD
+        MENUITEM "&Save...", ID_SAVE
+        MENUITEM SEPARATOR
+        MENUITEM "E&xit\tAlt-F4", ID_EXIT
+    END    
+END
+
 1 VERSIONINFO
  FILEVERSION 1,0,0,0
  PRODUCTVERSION 1,0,0,0
