@@ -6,36 +6,12 @@
 #include <vector>
 #include <thread>
 #include <memory.h>
-#include "json_lite.h"
 #include "resource.h"
 #include "cfg.h"
 
-struct Ctx {
-    HINSTANCE instance;
-    Cfg *cfg;
-    uint32_t flags;
-    HPEN outsideWall, internalWall, splittingWall;
-    HWND position, workspace;
-
-    Ctx (HINSTANCE _instance, Cfg *_cfg): flags (0), instance (_instance), cfg (_cfg) {
-        outsideWall = CreatePen (PS_SOLID, 10, 0);
-        internalWall = CreatePen (PS_SOLID, 5, 0);
-        splittingWall = CreatePen (PS_SOLID, 2, 0);
-    }
-
-    virtual ~Ctx () {
-        DeleteObject (outsideWall);
-        DeleteObject (internalWall);
-        DeleteObject (splittingWall);
-    }
-};
-
 char const *CLS_NAME = "ehWin";
 char const *WSP_CLS_NAME = "ehWinWsp";
-uint32_t const NO_SKIP = 0xFFFFFFFF;
 uint32_t const EDGE = 50;
-
-void loadConfig (Cfg *cfg);
 
 bool queryExit (HWND wnd) {
     return MessageBox (wnd, "Do you want to quit the application?", "Confirmation", MB_YESNO | MB_ICONQUESTION) == IDYES;
@@ -78,15 +54,14 @@ void doCommand (HWND wnd, uint16_t command) {
     Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
 
     switch (command) {
-        case ID_EXIT: {
+        case ID_EXIT:
             if (queryExit (wnd)) DestroyWindow (wnd);
             break;
-        }
-        case ID_LOAD: {
-            loadConfig (ctx->cfg);
-            InvalidateRect (wnd, 0, 1);
+        case ID_LOAD:
+            if (loadConfigFrom (wnd, ctx)) InvalidateRect (wnd, 0, 1);
             break;
-        }
+        case ID_SAVE:
+            saveConfigTo (wnd, ctx); break;
     }
 }
 
@@ -259,10 +234,18 @@ void paintWorkspace (HWND wnd) {
     EndPaint (wnd, & data);
 }
 
+void onSize (HWND wnd, uint16_t width, uint16_t height) {
+    Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
+
+    MoveWindow (ctx->workspace, 0, 22, width, height - 22, true);
+}
+
 LRESULT wndProc (HWND wnd, UINT msg, WPARAM param1, LPARAM param2) {
     LRESULT result = 0;
 
     switch (msg) {
+        case WM_SIZE:
+            onSize (wnd, LOWORD (param2), HIWORD (param2)); break;
         case WM_COMMAND:
             doCommand (wnd, LOWORD (param1)); break;
         case WM_CREATE:
@@ -344,114 +327,6 @@ void initCommonControls () {
     InitCommonControlsEx (& data);
 }
 
-void loadConfig (Cfg *cfg) {
-    char cfgPath [MAX_PATH];
-
-    GetModuleFileName (0, cfgPath, sizeof (cfgPath));
-    PathRenameExtension (cfgPath, ".cfg");
-
-    cfg->walls.clear ();
-
-    if (PathFileExists (cfgPath)) {
-        FILE *cfgFile = fopen (cfgPath, "rb+");
-
-        if (cfgFile) {
-            fseek (cfgFile, 0, SEEK_END);
-
-            auto size = ftell (cfgFile);
-
-            fseek (cfgFile, 0, SEEK_SET);
-
-            char *buffer = (char *) malloc (size + 1);
-
-            memset (buffer, 0, size + 1);
-
-            if (fread (buffer, 1, size, cfgFile) > 0) {
-                int next = 0;
-                auto json = json::parse (buffer, buffer + size, next);
-
-                json::hashNode *root = (json::hashNode *) json;
-                json::hashNode *paramsNode = (json::hashNode *) (*root) ["params"];
-                json::arrayNode *wallsNode = (json::arrayNode *) (*root) ["walls"];
-
-                if (paramsNode != json::nothing) {
-                    json::numberNode *widthNode = (json::numberNode *) (*paramsNode) ["width"];
-                    json::numberNode *heightNode = (json::numberNode *) (*paramsNode) ["height"];
-                    json::numberNode *outsideWallWidthNode = (json::numberNode *) (*paramsNode) ["outsideWallWidth"];
-                    json::numberNode *internalWallWidthNode = (json::numberNode *) (*paramsNode) ["internalWallWidth"];
-                    json::numberNode *splittingWallWidthNode = (json::numberNode *) (*paramsNode) ["splittingWallWidth"];
-
-                    if (widthNode != json::nothing) cfg->param.width = (uint32_t) widthNode->getValue ();
-                    if (heightNode != json::nothing) cfg->param.height = (uint32_t) heightNode->getValue ();
-                    if (outsideWallWidthNode != json::nothing) cfg->param.outsideWallWidth = (uint32_t) outsideWallWidthNode->getValue ();
-                    if (internalWallWidthNode != json::nothing) cfg->param.internalWallWidth = (uint32_t) internalWallWidthNode->getValue ();
-                    if (splittingWallWidthNode != json::nothing) cfg->param.splittingWallWidth = (uint32_t) splittingWallWidthNode->getValue ();
-                }
-
-                if (wallsNode != json::nothing) {
-                    for (auto item = wallsNode->begin (); item != wallsNode->end (); ++ item) {
-                        json::hashNode *wallNode = (json::hashNode *) *item;
-                        json::stringNode *orientNode = (json::stringNode *) (*wallNode) ["orient"];
-                        json::stringNode *typeNode = (json::stringNode *) (*wallNode) ["type"];
-                        json::numberNode *beginXNode = (json::numberNode *) (*wallNode) ["beginX"];
-                        json::numberNode *beginYNode = (json::numberNode *) (*wallNode) ["beginY"];
-                        json::numberNode *lengthNode = (json::numberNode *) (*wallNode) ["length"];
-                        json::numberNode *startOverNode = (json::numberNode *) (*wallNode) ["startOver"];
-
-                        cfg->walls.emplace_back ();
-
-                        auto& wall = cfg->walls.back ();
-
-                        if (orientNode == json::nothing) {
-                            wall.orient = WallOrient::RIGHT;
-                        } else {
-                            auto orient = orientNode->getValue ();
-
-                            if (stricmp (orient, "left") == 0) {
-                                wall.orient = WallOrient::LEFT;
-                            } else if (stricmp (orient, "right") == 0) {
-                                wall.orient = WallOrient::RIGHT;
-                            } else if (stricmp (orient, "up") == 0) {
-                                wall.orient = WallOrient::UP;
-                            } else if (stricmp (orient, "down") == 0) {
-                                wall.orient = WallOrient::DOWN;
-                            } else {
-                                wall.orient = WallOrient::RIGHT;
-                            }
-                        }
-
-                        if (typeNode == json::nothing) {
-                            wall.type = WallType::INTERNAL;
-                        } else {
-                            auto type = typeNode->getValue ();
-
-                            if (stricmp (type, "internal") == 0) {
-                                wall.type = WallType::INTERNAL;
-                            } else if (stricmp (type, "outside") == 0) {
-                                wall.type = WallType::OUTSIDE;
-                            } else if (stricmp (type, "splitting") == 0) {
-                                wall.type = WallType::SPLITTING;
-                            } else {
-                                wall.type = WallType::INTERNAL;
-                            }
-                        }
-
-                        wall.beginX = (beginXNode != json::nothing) ? (uint32_t) beginXNode->getValue () : 0;
-                        wall.beginY = (beginYNode != json::nothing) ? (uint32_t) beginYNode->getValue () : 0;
-                        wall.length = (lengthNode != json::nothing) ? (uint32_t) lengthNode->getValue () : 0;
-                        wall.startOver = (startOverNode == json::nothing) ? NO_SKIP : (uint32_t) startOverNode->getValue ();
-                    }
-                }
-
-                delete json;
-                free (buffer);
-            }
-
-            fclose (cfgFile);
-        }
-    }
-}
-
 int APIENTRY WinMain (HINSTANCE instance, HINSTANCE prev, char *cmdLine, int showCmd) {
     Cfg cfg;
     Ctx ctx (instance, & cfg);
@@ -459,7 +334,8 @@ int APIENTRY WinMain (HINSTANCE instance, HINSTANCE prev, char *cmdLine, int sho
     CoInitialize (0);
     initCommonControls ();
     registerClass (instance);
-    loadConfig (& cfg);
+    
+    if (cmdLine && *cmdLine) loadConfig (& cfg, cmdLine);
 
     auto mainWnd = CreateWindow (
         CLS_NAME,
