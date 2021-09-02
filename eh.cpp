@@ -15,6 +15,7 @@ struct Ctx {
     Cfg *cfg;
     uint32_t flags;
     HPEN outsideWall, internalWall, splittingWall;
+    HWND position, workspace;
 
     Ctx (HINSTANCE _instance, Cfg *_cfg): flags (0), instance (_instance), cfg (_cfg) {
         outsideWall = CreatePen (PS_SOLID, 10, 0);
@@ -30,12 +31,19 @@ struct Ctx {
 };
 
 char const *CLS_NAME = "ehWin";
+char const *WSP_CLS_NAME = "ehWinWsp";
 uint32_t const NO_SKIP = 0xFFFFFFFF;
+uint32_t const EDGE = 50;
 
 void loadConfig (Cfg *cfg);
 
 bool queryExit (HWND wnd) {
     return MessageBox (wnd, "Do you want to quit the application?", "Confirmation", MB_YESNO | MB_ICONQUESTION) == IDYES;
+}
+
+void initWorkspace (HWND wnd, void *data) {
+    Ctx *ctx = (Ctx *) data;
+    SetWindowLongPtr (wnd, GWLP_USERDATA, (LONG_PTR) data);
 }
 
 void initWindow (HWND wnd, void *data) {
@@ -49,10 +57,21 @@ void initWindow (HWND wnd, void *data) {
 
         if (visible) style |= WS_VISIBLE;
         
-        CreateWindow (className, text, style, x, y, width, height, wnd, (HMENU) id, ctx->instance, 0);
+        return CreateWindow (className, text, style, x, y, width, height, wnd, (HMENU) id, ctx->instance, 0);
+    };
+    auto createPopup = [&wnd, &ctx] (const char *className, const char *text, uint32_t style, bool visible, int x, int y, int width, int height) {
+        style |= WS_POPUP;
+
+        if (visible) style |= WS_VISIBLE;
+        
+        return CreateWindow (className, text, style, x, y, width, height, wnd, 0, ctx->instance, 0);
     };
 
     SetWindowLongPtr (wnd, GWLP_USERDATA, (LONG_PTR) data);
+
+    //ctx->position = createPopup ("STATIC", "N/A", SS_CENTER | WS_BORDER, true, CW_USEDEFAULT, CW_USEDEFAULT, 100, 30);
+    ctx->workspace = CreateWindow (WSP_CLS_NAME, "", WS_CHILD | WS_BORDER | WS_VISIBLE, 0, 21, client.right, client.bottom - 22, wnd, 0, ctx->instance, ctx);
+    ctx->position = CreateWindow ("STATIC", "N/A", WS_CHILD | SS_CENTER | WS_BORDER | WS_VISIBLE, 0, 0, 400, 22, wnd, 0, ctx->instance, 0);
 }
 
 void doCommand (HWND wnd, uint16_t command) {
@@ -71,13 +90,12 @@ void doCommand (HWND wnd, uint16_t command) {
     }
 }
 
-void paintWindow (HWND wnd) {
+void paintWorkspace (HWND wnd) {
     PAINTSTRUCT data;
     Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
     HDC paintCtx = BeginPaint (wnd, & data);
     RECT client;
     uint32_t lastX, lastY;
-    static const uint32_t EDGE = 50;
     auto project = [&client, &ctx] (POINT& pos, POINT& clientPos) {
         clientPos.x = EDGE + (uint32_t) (double) pos.x * (double) (client.right - EDGE * 2) / (double) ctx->cfg->param.width;
         clientPos.y = EDGE + (uint32_t) (double) pos.y * (double) (client.bottom - EDGE * 2) / (double) ctx->cfg->param.height;
@@ -216,7 +234,15 @@ void paintWindow (HWND wnd) {
         lastY = end.y;*/
     };
 
+    RECT workingArea;
     GetClientRect (wnd, & client);
+    GetClientRect (wnd, & workingArea);
+    workingArea.left += EDGE;
+    workingArea.top += EDGE;
+    workingArea.right -= EDGE;
+    workingArea.bottom -= EDGE;
+
+    FillRect (paintCtx, & workingArea, (HBRUSH) GetStockObject (GRAY_BRUSH));        
     drawBox (0, 0, ctx->cfg->param.width, ctx->cfg->param.height);
 
     for (auto& wall: ctx->cfg->walls) drawLine (wall);
@@ -237,20 +263,52 @@ LRESULT wndProc (HWND wnd, UINT msg, WPARAM param1, LPARAM param2) {
     LRESULT result = 0;
 
     switch (msg) {
-        case WM_PAINT:
-            paintWindow (wnd); break;
         case WM_COMMAND:
             doCommand (wnd, LOWORD (param1)); break;
         case WM_CREATE:
             initWindow (wnd, ((CREATESTRUCT *) param2)->lpCreateParams); break;
         case WM_DESTROY:
             PostQuitMessage (9); break;
-        case WM_SYSCOMMAND: {
+        case WM_SYSCOMMAND:
             if (param1 == SC_CLOSE && queryExit (wnd)) DestroyWindow (wnd);
-        }
-        default: {
+        default:
             result = DefWindowProc (wnd, msg, param1, param2);
-        }
+    }
+    
+    return result;
+}
+
+void onMouseMove (HWND wnd, int clientX, int clientY) {
+    Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
+    RECT client;
+
+    GetClientRect (wnd, & client);
+
+    if (clientX < EDGE || clientY < EDGE || (client.right - clientX) < EDGE || (client.bottom - clientY) < EDGE) {
+        SetWindowText (ctx->position, "");
+    } else {
+        int x = (int) ((double) (clientX - EDGE) * (double) ctx->cfg->param.width / (double) (client.right - EDGE * 2));
+        int y = (int) ((double) (clientY - EDGE) * (double) ctx->cfg->param.height / (double) (client.bottom - EDGE * 2));
+
+        char msg [100];
+        sprintf (msg, "X: %d; Y: %d", x, y);
+
+        SetWindowText (ctx->position, msg);
+    }
+}
+
+LRESULT workspaceWndProc (HWND wnd, UINT msg, WPARAM param1, LPARAM param2) {
+    LRESULT result = 0;
+
+    switch (msg) {
+        case WM_MOUSEMOVE:
+            onMouseMove (wnd, LOWORD (param2), HIWORD (param2)); break;
+        case WM_PAINT:
+            paintWorkspace (wnd); break;
+        case WM_CREATE:
+            initWorkspace (wnd, ((CREATESTRUCT *) param2)->lpCreateParams); break;
+        default:
+            result = DefWindowProc (wnd, msg, param1, param2);
     }
     
     return result;
@@ -259,7 +317,7 @@ LRESULT wndProc (HWND wnd, UINT msg, WPARAM param1, LPARAM param2) {
 void registerClass (HINSTANCE instance) {
     WNDCLASS classInfo;
 
-    memset (&classInfo, 0, sizeof (classInfo));
+    memset (& classInfo, 0, sizeof (classInfo));
 
     classInfo.hbrBackground = (HBRUSH) GetStockObject (WHITE_BRUSH);
     classInfo.hCursor = (HCURSOR) LoadCursor (0, IDC_ARROW);
@@ -269,7 +327,12 @@ void registerClass (HINSTANCE instance) {
     classInfo.lpszClassName = CLS_NAME;
     classInfo.style = CS_HREDRAW | CS_VREDRAW;
 
-    RegisterClass (&classInfo);
+    RegisterClass (& classInfo);
+
+    classInfo.lpfnWndProc = workspaceWndProc;
+    classInfo.lpszClassName = WSP_CLS_NAME;
+
+    RegisterClass (& classInfo);
 }
 
 void initCommonControls () {
