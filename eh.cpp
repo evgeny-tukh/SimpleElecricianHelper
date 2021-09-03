@@ -8,10 +8,13 @@
 #include <memory.h>
 #include "resource.h"
 #include "cfg.h"
+#include "editbox.h"
 
 char const *CLS_NAME = "ehWin";
 char const *WSP_CLS_NAME = "ehWinWsp";
 uint32_t const EDGE = 50;
+
+bool screenToReal (HWND wnd, int screenX, int screenY, int& realX, int& realY);
 
 bool queryExit (HWND wnd) {
     return MessageBox (wnd, "Do you want to quit the application?", "Confirmation", MB_YESNO | MB_ICONQUESTION) == IDYES;
@@ -50,6 +53,30 @@ void initWindow (HWND wnd, void *data) {
     ctx->position = CreateWindow ("STATIC", "N/A", WS_CHILD | SS_CENTER | WS_BORDER | WS_VISIBLE, 0, 0, 400, 22, wnd, 0, ctx->instance, 0);
 }
 
+void cancelCable (HWND wnd) {
+    Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
+
+    if (ctx->curCable) {
+        delete ctx->curCable;
+        ctx->curCable = 0;
+    }
+}
+
+void beginCable (HWND wnd) {
+    Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
+    uint32_t z;
+
+    if (editNumber (wnd, ctx->instance, "New cable", "Please enter cable begin level, mm", & z, 1000)) {
+        int realX, realY;
+        
+        if (screenToReal (wnd, ctx->clickX, ctx->clickY, realX, realY)) {
+            ctx->curCable = new Cable;
+
+            ctx->curCable->addNode (realX, realY, z);
+        }
+    }
+}
+
 void doCommand (HWND wnd, uint16_t command) {
     Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
 
@@ -62,6 +89,13 @@ void doCommand (HWND wnd, uint16_t command) {
             break;
         case ID_SAVE:
             saveConfigTo (wnd, ctx); break;
+        case ID_BEGIN_CABLE:
+            beginCable (wnd); break;
+        case ID_CANCEL_CABLE:
+            if (MessageBox (wnd, "Cancel cable", "Do you want to cancel the editing cable?", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                cancelCable (wnd);
+            }
+            break;
     }
 }
 
@@ -222,15 +256,6 @@ void paintWorkspace (HWND wnd) {
 
     for (auto& wall: ctx->cfg->walls) drawLine (wall);
 
-    /*HDC tempCtx = CreateCompatibleDC (paintCtx);
-
-    GetClientRect (wnd, & client);
-    SelectObject (paintCtx, GetStockObject (BLACK_PEN));
-    Rectangle (paintCtx, 9, 9, 311, client.bottom - 9);
-    SelectObject (tempCtx, ctx->image);
-    BitBlt (paintCtx, 10, 10, 300, client.bottom - 20, tempCtx, 300, 100, SRCCOPY);
-    SelectObject (tempCtx, (HBITMAP) 0);
-    DeleteDC (tempCtx);*/
     EndPaint (wnd, & data);
 }
 
@@ -261,29 +286,55 @@ LRESULT wndProc (HWND wnd, UINT msg, WPARAM param1, LPARAM param2) {
     return result;
 }
 
-void onMouseMove (HWND wnd, int clientX, int clientY) {
-    Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
+bool screenToReal (HWND wnd, int screenX, int screenY, int& realX, int& realY) {
     RECT client;
 
     GetClientRect (wnd, & client);
 
-    if (clientX < EDGE || clientY < EDGE || (client.right - clientX) < EDGE || (client.bottom - clientY) < EDGE) {
-        SetWindowText (ctx->position, "");
+    if (screenX < EDGE || screenY < EDGE || (client.right - screenX) < EDGE || (client.bottom - screenY) < EDGE) {
+        return false;
     } else {
-        int x = (int) ((double) (clientX - EDGE) * (double) ctx->cfg->param.width / (double) (client.right - EDGE * 2));
-        int y = (int) ((double) (clientY - EDGE) * (double) ctx->cfg->param.height / (double) (client.bottom - EDGE * 2));
+        Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
+        
+        realX = (int) ((double) (screenX - EDGE) * (double) ctx->cfg->param.width / (double) (client.right - EDGE * 2));
+        realY = (int) ((double) (screenY - EDGE) * (double) ctx->cfg->param.height / (double) (client.bottom - EDGE * 2));
 
+        return true;
+    }
+}
+
+void onMouseMove (HWND wnd, int clientX, int clientY) {
+    Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
+    int realX, realY;
+
+    if (screenToReal (wnd, clientX, clientY, realX, realY)) {
         char msg [100];
-        sprintf (msg, "X: %d; Y: %d", x, y);
+        sprintf (msg, "X: %d; Y: %d", realX, realY);
 
         SetWindowText (ctx->position, msg);
+    } else {
+        SetWindowText (ctx->position, "");
     }
+}
+
+void onRightButtonDown (HWND wnd, int x, int y) {
+    Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
+    RECT window;
+
+    GetWindowRect (wnd, & window);
+
+    ctx->clickX = x + window.left;
+    ctx->clickY = y + window.top;
+
+    TrackPopupMenu (GetSubMenu (ctx->contextMenu, 0), TPM_LEFTALIGN | TPM_TOPALIGN, ctx->clickX, ctx->clickY, 0, GetParent (wnd), 0);
 }
 
 LRESULT workspaceWndProc (HWND wnd, UINT msg, WPARAM param1, LPARAM param2) {
     LRESULT result = 0;
 
     switch (msg) {
+        case WM_RBUTTONDOWN:
+            onRightButtonDown (wnd, LOWORD (param2), HIWORD (param2)); break;
         case WM_MOUSEMOVE:
             onMouseMove (wnd, LOWORD (param2), HIWORD (param2)); break;
         case WM_PAINT:

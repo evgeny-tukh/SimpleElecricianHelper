@@ -1,4 +1,5 @@
 #include "resource.h"
+#include "winuser.h"
 
 IDR_MAINMENU MENU
 BEGIN
@@ -9,6 +10,30 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "E&xit\tAlt-F4", ID_EXIT
     END    
+END
+
+IDR_CONTEXT_MENU MENU
+BEGIN
+    POPUP ""
+    BEGIN
+        MENUITEM "Begin cable from here", ID_BEGIN_CABLE
+        MENUITEM "Cancel cable making", ID_CANCEL_CABLE
+        MENUITEM "Save cable", ID_SAVE_CABLE
+        MENUITEM "Add node here", ID_ADD_CABLE_NODE
+        MENUITEM "Run cable up...", ID_RUN_CABLE_UP
+        MENUITEM "Run cable down...", ID_RUN_CABLE_DOWN
+    END
+END
+
+IDD_EDITBOX DIALOG  0, 0, 184, 44
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "EditBox"
+FONT 8, "MS Sans Serif"
+BEGIN
+    EDITTEXT        ID_EDITING_TEXT,4,26,121,12,0
+    DEFPUSHBUTTON   "OK",ID_OK,129,7,50,14
+    PUSHBUTTON      "Cancel",ID_CANCEL,129,24,50,14
+    LTEXT           "Here should be the prompt. It is Multi-Lined",ID_PROMPT,6,6,117,16
 END
 
 1 VERSIONINFO
