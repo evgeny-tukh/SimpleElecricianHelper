@@ -19,7 +19,12 @@ BEGIN
         MENUITEM "Begin cable from here", ID_BEGIN_CABLE
         MENUITEM "Cancel cable making", ID_CANCEL_CABLE
         MENUITEM "Save cable", ID_SAVE_CABLE
-        MENUITEM "Add node here", ID_ADD_CABLE_NODE
+        POPUP "Add &node here"
+        BEGIN
+            MENUITEM "Same x as previous", ID_ADD_SAME_X
+            MENUITEM "Same y as previous", ID_ADD_SAME_Y
+            MENUITEM "Just here", ID_ADD_CABLE_NODE_HERE
+        END
         MENUITEM "Run cable up...", ID_RUN_CABLE_UP
         MENUITEM "Run cable down...", ID_RUN_CABLE_DOWN
     END
@@ -34,6 +39,23 @@ BEGIN
     DEFPUSHBUTTON   "OK",ID_OK,129,7,50,14
     PUSHBUTTON      "Cancel",ID_CANCEL,129,24,50,14
     LTEXT           "Here should be the prompt. It is Multi-Lined",ID_PROMPT,6,6,117,16
+END
+
+IDD_CABLE_PROPS DIALOG  0, 0, 250, 110
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Cable Properties"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LTEXT           "Cable elevation from the ground, mm",-1,10,10,200,16
+    EDITTEXT        ID_ELEVATION,150,10,50,14,ES_NUMBER|WS_TABSTOP
+    LTEXT           "Cable color",-1,10,30,80,16
+    COMBOBOX        ID_COLOR,150,30,80,80,CBS_DROPDOWNLIST|WS_TABSTOP|WS_VSCROLL
+    LTEXT           "Cable name",-1,10,50,200,16
+    EDITTEXT        ID_NAME,150,50,50,14,WS_TABSTOP
+    LTEXT           "Number of wires",-1,10,70,200,16
+    EDITTEXT        ID_NUM_OF_WIRES,150,70,50,14,ES_NUMBER|WS_TABSTOP
+    DEFPUSHBUTTON   "OK",ID_OK,10,90,50,14
+    PUSHBUTTON      "Cancel",ID_CANCEL,70,90,50,14
 END
 
 1 VERSIONINFO

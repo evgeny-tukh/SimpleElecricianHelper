@@ -12,6 +12,8 @@
 uint32_t const NO_SKIP = 0xFFFFFFFF;
 char const *FILTER = "Configuration files (*.cfg)\0*.cfg\0All files\0*.*\0\0";
 
+uint32_t Cable::count = 1;
+
 bool loadConfigFrom (HWND owner, Ctx *ctx) {
     OPENFILENAME data;
     char filePath [MAX_PATH];

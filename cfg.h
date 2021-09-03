@@ -55,9 +55,17 @@ struct Cable {
     };
 
     std::vector<Node> nodes;
-    std::string color;
+    std::string color, name;
     uint8_t square;
     uint8_t numOfWires;
+
+    static uint32_t count;
+
+    static std::string getDefNewName () {
+        return std::string ("Cable ") + std::to_string (count++);
+    }
+    
+    Cable (): color ("BLACK"), name (), numOfWires (3) {}
 
     void addNode (uint32_t x, uint32_t y, uint32_t z) {
         nodes.emplace_back (x, y, z);
@@ -88,6 +96,7 @@ struct Cable {
 struct Cfg {
     Parameters param;
     std::vector<Wall> walls;
+    std::vector<Cable> cables;
 
     void load ();
     void save ();
@@ -116,23 +125,45 @@ struct Ctx {
     HINSTANCE instance;
     Cfg *cfg;
     uint32_t flags, clickX, clickY;
-    HPEN outsideWall, internalWall, splittingWall;
+    union {
+        struct {
+            HPEN outsideWall, internalWall, splittingWall;
+            HPEN blackPen, redPen, greenPen, bluePen, orangePen, yellowPen, grayPen;
+        };
+        HPEN pens [10];
+    };
     HWND position, workspace;
     HMENU contextMenu;
     Cable *curCable;
 
-    Ctx (HINSTANCE _instance, Cfg *_cfg): flags (0), instance (_instance), cfg (_cfg) {
+    Ctx (HINSTANCE _instance, Cfg *_cfg): flags (0), instance (_instance), cfg (_cfg), curCable (0) {
         outsideWall = CreatePen (PS_SOLID, 10, 0);
         internalWall = CreatePen (PS_SOLID, 5, 0);
         splittingWall = CreatePen (PS_SOLID, 2, 0);
+        blackPen = CreatePen (PS_SOLID, 1, 0);
+        redPen = CreatePen (PS_SOLID, 1, RGB (255, 0, 0));
+        greenPen = CreatePen (PS_SOLID, 1, RGB (0, 255, 0));
+        bluePen = CreatePen (PS_SOLID, 1, RGB (0, 0, 255));
+        orangePen = CreatePen (PS_SOLID, 1, RGB (255, 165, 0));
+        yellowPen = CreatePen (PS_SOLID, 1, RGB (255, 215, 0));
+        grayPen = CreatePen (PS_SOLID, 1, RGB (200, 200, 200));
         contextMenu = LoadMenu (instance, MAKEINTRESOURCE (IDR_CONTEXT_MENU));
     }
 
     virtual ~Ctx () {
-        DeleteObject (outsideWall);
-        DeleteObject (internalWall);
-        DeleteObject (splittingWall);
+        for (auto i = 0; i < 10; DeleteObject (pens [i]++));
         DestroyMenu (contextMenu);
+    }
+
+    HPEN getColredPen (const char *color) {
+        if (stricmp (color, "black") == 0) return blackPen;
+        if (stricmp (color, "red") == 0) return redPen;
+        if (stricmp (color, "green") == 0) return greenPen;
+        if (stricmp (color, "blue") == 0) return bluePen;
+        if (stricmp (color, "orange") == 0) return orangePen;
+        if (stricmp (color, "yellow") == 0) return yellowPen;
+        if (stricmp (color, "gray") == 0) return grayPen;
+        return 0;
     }
 };
 

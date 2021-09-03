@@ -9,6 +9,13 @@
 #include "resource.h"
 #include "cfg.h"
 #include "editbox.h"
+#include "cable_props.h"
+
+enum NodeAddMode {
+    HERE,
+    SAME_X,
+    SAME_Y,
+};
 
 char const *CLS_NAME = "ehWin";
 char const *WSP_CLS_NAME = "ehWinWsp";
@@ -64,23 +71,70 @@ void cancelCable (HWND wnd) {
 
 void beginCable (HWND wnd) {
     Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
-    uint32_t z;
+    int realX, realY;
 
-    if (editNumber (wnd, ctx->instance, "New cable", "Please enter cable begin level, mm", & z, 1000)) {
-        int realX, realY;
-        
-        if (screenToReal (wnd, ctx->clickX, ctx->clickY, realX, realY)) {
-            ctx->curCable = new Cable;
+    if (!screenToReal (wnd, ctx->clickX, ctx->clickY, realX, realY)) return;
 
-            ctx->curCable->addNode (realX, realY, z);
-        }
+    Cable *cable = new Cable;
+
+    uint32_t x = realX;
+    uint32_t y = realY;
+    uint32_t z = 1000;
+    uint32_t numOfWires = 3;
+    std::string color ("BLACK");
+    std::string name (Cable::getDefNewName ());
+
+    if (getNewCableProps (wnd, ctx->instance, numOfWires, x, y, z, name, color)) {
+        ctx->curCable = new Cable;
+        ctx->curCable->name = name;
+        ctx->curCable->color = color;
+        ctx->curCable->addNode (x, y, z);
+    } else {
+        delete cable;
     }
+}
+
+void addNewCableNode (HWND wnd, NodeAddMode mode) {
+    Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
+    int realX, realY;
+
+    if (!ctx->curCable || !screenToReal (wnd, ctx->clickX, ctx->clickY, realX, realY)) return;
+
+    auto& lastNode = ctx->curCable->nodes.back ();
+
+    uint32_t x, y, z;
+
+    switch (mode) {
+        case NodeAddMode::HERE:
+            x = realX;
+            y = realY;
+            z = lastNode.z;
+            break;
+        case NodeAddMode::SAME_X:
+            x = lastNode.x;
+            y = realY;
+            z = lastNode.z;
+            break;
+        case NodeAddMode::SAME_Y:
+            x = realX;
+            y = lastNode.y;
+            z = lastNode.z;
+            break;
+        default:
+            return;
+    }
+
+    ctx->curCable->addNode (x, y, z);
 }
 
 void doCommand (HWND wnd, uint16_t command) {
     Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
 
     switch (command) {
+        case ID_ADD_CABLE_NODE_HERE:
+            addNewCableNode (wnd, NodeAddMode::HERE);
+            InvalidateRect (ctx->workspace, 0, 1);
+            break;
         case ID_EXIT:
             if (queryExit (wnd)) DestroyWindow (wnd);
             break;
@@ -119,6 +173,21 @@ void paintWorkspace (HWND wnd) {
 
         SelectObject (paintCtx, GetStockObject (BLACK_PEN));
         Rectangle (paintCtx, clientTl.x, clientTl.y, clientBr.x, clientBr.y);
+    };
+    auto drawCable = [project, paintCtx, ctx] (Cable& cable) {
+        SelectObject (paintCtx, ctx->getColredPen (cable.color.c_str ()));
+        POINT realPos, screenPos;
+        realPos.x = cable.nodes.front ().x;
+        realPos.y = cable.nodes.front ().y;
+        project (realPos, screenPos);
+        MoveToEx (paintCtx, screenPos.x, screenPos.y, 0);
+        
+        for (auto i = 1; i < cable.nodes.size (); ++ i) {
+            realPos.x = cable.nodes [i].x;
+            realPos.y = cable.nodes [i].y;
+            project (realPos, screenPos);
+            LineTo (paintCtx, screenPos.x, screenPos.y);
+        }
     };
     auto drawLine = [project, paintCtx, ctx, &lastX, &lastY] (Wall& wall) {
         POINT begin, end, clientBegin, clientEnd;
@@ -229,18 +298,6 @@ void paintWorkspace (HWND wnd) {
 
         SelectObject (paintCtx, GetStockObject (BLACK_PEN));
         FillRect (paintCtx, & wallRect, (HBRUSH) GetStockObject (BLACK_BRUSH));
-        /*switch (wall.type) {
-            case WallType::INTERNAL: SelectObject (paintCtx, ctx->internalWall); break;
-            case WallType::OUTSIDE: SelectObject (paintCtx, ctx->outsideWall); break;
-            case WallType::SPLITTING: SelectObject (paintCtx, ctx->splittingWall); break;
-            default: SelectObject (paintCtx, GetStockObject (BLACK_PEN));
-        }
-
-        MoveToEx (paintCtx, clientBegin.x, clientBegin.y, 0);
-        LineTo (paintCtx, clientEnd.x, clientEnd.y);
-
-        lastX = end.x;
-        lastY = end.y;*/
     };
 
     RECT workingArea;
@@ -255,6 +312,9 @@ void paintWorkspace (HWND wnd) {
     drawBox (0, 0, ctx->cfg->param.width, ctx->cfg->param.height);
 
     for (auto& wall: ctx->cfg->walls) drawLine (wall);
+    for (auto& cable: ctx->cfg->cables) drawCable (cable);
+
+    if (ctx->curCable) drawCable (*(ctx->curCable));
 
     EndPaint (wnd, & data);
 }
@@ -295,7 +355,7 @@ bool screenToReal (HWND wnd, int screenX, int screenY, int& realX, int& realY) {
         return false;
     } else {
         Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
-        
+
         realX = (int) ((double) (screenX - EDGE) * (double) ctx->cfg->param.width / (double) (client.right - EDGE * 2));
         realY = (int) ((double) (screenY - EDGE) * (double) ctx->cfg->param.height / (double) (client.bottom - EDGE * 2));
 
