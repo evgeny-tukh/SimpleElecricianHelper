@@ -71,6 +71,15 @@ void cancelCable (HWND wnd) {
     }
 }
 
+void saveCable (HWND wnd) {
+    Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
+
+    if (ctx->curCable) {
+        ctx->cfg->cables.push_back (*ctx->curCable);
+        ctx->curCable = 0;
+    }
+}
+
 void beginCable (HWND wnd) {
     Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
     int realX, realY;
@@ -195,6 +204,14 @@ void doCommand (HWND wnd, uint16_t command) {
         case ID_CANCEL_CABLE: {
             if (MessageBox (wnd, "Cancel cable", "Do you want to cancel the editing cable?", MB_YESNO | MB_ICONQUESTION) == IDYES) {
                 cancelCable (wnd);
+            }
+            break;
+        }
+        case ID_SAVE_CABLE: {
+            if (MessageBox (wnd, "Save cable", "Do you want to stop the editing cable and save the cable?", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                saveCable (wnd);
+                InvalidateRect (wnd, 0, 1);
+                break;
             }
             break;
         }
