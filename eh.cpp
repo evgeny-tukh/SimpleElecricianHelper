@@ -15,6 +15,8 @@ enum NodeAddMode {
     HERE,
     SAME_X,
     SAME_Y,
+    LIFT,
+    LOWER,
 };
 
 char const *CLS_NAME = "ehWin";
@@ -22,6 +24,7 @@ char const *WSP_CLS_NAME = "ehWinWsp";
 uint32_t const EDGE = 50;
 
 bool screenToReal (HWND wnd, int screenX, int screenY, int& realX, int& realY);
+void realToScreen (HWND wnd, int realX, int realY, int& screenX, int& screenY);
 
 bool queryExit (HWND wnd) {
     return MessageBox (wnd, "Do you want to quit the application?", "Confirmation", MB_YESNO | MB_ICONQUESTION) == IDYES;
@@ -34,9 +37,8 @@ void initWorkspace (HWND wnd, void *data) {
 
 void initWindow (HWND wnd, void *data) {
     Ctx *ctx = (Ctx *) data;
-    RECT client;
 
-    GetClientRect (wnd, & client);
+    GetClientRect (wnd, & ctx->client);
 
     auto createControl = [&wnd, &ctx] (const char *className, const char *text, uint32_t style, bool visible, int x, int y, int width, int height, uint64_t id) {
         style |= WS_CHILD;
@@ -56,7 +58,7 @@ void initWindow (HWND wnd, void *data) {
     SetWindowLongPtr (wnd, GWLP_USERDATA, (LONG_PTR) data);
 
     //ctx->position = createPopup ("STATIC", "N/A", SS_CENTER | WS_BORDER, true, CW_USEDEFAULT, CW_USEDEFAULT, 100, 30);
-    ctx->workspace = CreateWindow (WSP_CLS_NAME, "", WS_CHILD | WS_BORDER | WS_VISIBLE, 0, 21, client.right, client.bottom - 22, wnd, 0, ctx->instance, ctx);
+    ctx->workspace = CreateWindow (WSP_CLS_NAME, "", WS_CHILD | WS_BORDER | WS_VISIBLE, 0, 21, ctx->client.right, ctx->client.bottom - 22, wnd, 0, ctx->instance, ctx);
     ctx->position = CreateWindow ("STATIC", "N/A", WS_CHILD | SS_CENTER | WS_BORDER | WS_VISIBLE, 0, 0, 400, 22, wnd, 0, ctx->instance, 0);
 }
 
@@ -73,7 +75,7 @@ void beginCable (HWND wnd) {
     Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
     int realX, realY;
 
-    if (!screenToReal (wnd, ctx->clickX, ctx->clickY, realX, realY)) return;
+    if (!screenToReal (wnd, ctx->selectedX, ctx->selectedY, realX, realY)) return;
 
     Cable *cable = new Cable;
 
@@ -94,11 +96,11 @@ void beginCable (HWND wnd) {
     }
 }
 
-void addNewCableNode (HWND wnd, NodeAddMode mode) {
+void addNewCableNode (HWND wnd, NodeAddMode mode, uint32_t vertOffset = 0) {
     Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
     int realX, realY;
 
-    if (!ctx->curCable || !screenToReal (wnd, ctx->clickX, ctx->clickY, realX, realY)) return;
+    if (!ctx->curCable || !screenToReal (wnd, ctx->selectedX, ctx->selectedY, realX, realY)) return;
 
     auto& lastNode = ctx->curCable->nodes.back ();
 
@@ -120,6 +122,16 @@ void addNewCableNode (HWND wnd, NodeAddMode mode) {
             y = lastNode.y;
             z = lastNode.z;
             break;
+        case NodeAddMode::LIFT:
+            x = lastNode.x;
+            y = lastNode.y;
+            z = lastNode.z + vertOffset;
+            break;
+        case NodeAddMode::LOWER:
+            x = lastNode.x;
+            y = lastNode.y;
+            z = lastNode.z - vertOffset;
+            break;
         default:
             return;
     }
@@ -131,25 +143,61 @@ void doCommand (HWND wnd, uint16_t command) {
     Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
 
     switch (command) {
-        case ID_ADD_CABLE_NODE_HERE:
+        case ID_ADD_CABLE_NODE_HERE: {
             addNewCableNode (wnd, NodeAddMode::HERE);
             InvalidateRect (ctx->workspace, 0, 1);
             break;
-        case ID_EXIT:
+        }
+        case ID_ADD_SAME_X: {
+            addNewCableNode (wnd, NodeAddMode::SAME_X);
+            InvalidateRect (ctx->workspace, 0, 1);
+            break;
+        }
+        case ID_ADD_SAME_Y: {
+            addNewCableNode (wnd, NodeAddMode::SAME_Y);
+            InvalidateRect (ctx->workspace, 0, 1);
+            break;
+        }
+        case ID_LIFT_CABLE: {
+            uint32_t offset = 0;
+
+            if (editNumber (wnd, ctx->instance, "Running the cable up", "How long should the cable be liften?", & offset, 0)) {
+                addNewCableNode (wnd, NodeAddMode::LIFT, offset);
+                InvalidateRect (ctx->workspace, 0, 1);
+            }
+
+            break;
+        }
+        case ID_LOWER_CABLE: {
+            uint32_t offset = 0;
+
+            if (editNumber (wnd, ctx->instance, "Running the cable down", "How long should the cable be lowered?", & offset, 0)) {
+                addNewCableNode (wnd, NodeAddMode::LIFT, offset);
+                InvalidateRect (ctx->workspace, 0, 1);
+            }
+
+            break;
+        }
+        case ID_EXIT: {
             if (queryExit (wnd)) DestroyWindow (wnd);
             break;
-        case ID_LOAD:
+        }
+        case ID_LOAD: {
             if (loadConfigFrom (wnd, ctx)) InvalidateRect (wnd, 0, 1);
             break;
-        case ID_SAVE:
+        }
+        case ID_SAVE: {
             saveConfigTo (wnd, ctx); break;
-        case ID_BEGIN_CABLE:
+        }
+        case ID_BEGIN_CABLE: {
             beginCable (wnd); break;
-        case ID_CANCEL_CABLE:
+        }
+        case ID_CANCEL_CABLE: {
             if (MessageBox (wnd, "Cancel cable", "Do you want to cancel the editing cable?", MB_YESNO | MB_ICONQUESTION) == IDYES) {
                 cancelCable (wnd);
             }
             break;
+        }
     }
 }
 
@@ -157,11 +205,10 @@ void paintWorkspace (HWND wnd) {
     PAINTSTRUCT data;
     Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
     HDC paintCtx = BeginPaint (wnd, & data);
-    RECT client;
     uint32_t lastX, lastY;
-    auto project = [&client, &ctx] (POINT& pos, POINT& clientPos) {
-        clientPos.x = EDGE + (uint32_t) (double) pos.x * (double) (client.right - EDGE * 2) / (double) ctx->cfg->param.width;
-        clientPos.y = EDGE + (uint32_t) (double) pos.y * (double) (client.bottom - EDGE * 2) / (double) ctx->cfg->param.height;
+    auto project = [&ctx] (POINT& pos, POINT& clientPos) {
+        clientPos.x = EDGE + (uint32_t) (double) pos.x * (double) (ctx->client.right - EDGE * 2) / (double) ctx->cfg->param.width;
+        clientPos.y = EDGE + (uint32_t) (double) pos.y * (double) (ctx->client.bottom - EDGE * 2) / (double) ctx->cfg->param.height;
     };
     auto drawBox = [project, paintCtx] (uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
         POINT tl { (LONG) x, (LONG) y };
@@ -175,7 +222,7 @@ void paintWorkspace (HWND wnd) {
         Rectangle (paintCtx, clientTl.x, clientTl.y, clientBr.x, clientBr.y);
     };
     auto drawCable = [project, paintCtx, ctx] (Cable& cable) {
-        SelectObject (paintCtx, ctx->getColredPen (cable.color.c_str ()));
+        SelectObject (paintCtx, ctx->getColoredPen (cable.color.c_str ()));
         POINT realPos, screenPos;
         realPos.x = cable.nodes.front ().x;
         realPos.y = cable.nodes.front ().y;
@@ -301,7 +348,6 @@ void paintWorkspace (HWND wnd) {
     };
 
     RECT workingArea;
-    GetClientRect (wnd, & client);
     GetClientRect (wnd, & workingArea);
     workingArea.left += EDGE;
     workingArea.top += EDGE;
@@ -314,7 +360,20 @@ void paintWorkspace (HWND wnd) {
     for (auto& wall: ctx->cfg->walls) drawLine (wall);
     for (auto& cable: ctx->cfg->cables) drawCable (cable);
 
-    if (ctx->curCable) drawCable (*(ctx->curCable));
+    if (ctx->curCable) {
+        drawCable (*(ctx->curCable));
+        int lastNodeX, lastNodeY;
+        auto& lastNode = ctx->curCable->nodes.back ();
+
+        realToScreen (wnd, lastNode.x, lastNode.y, lastNodeX, lastNodeY);
+
+        if (abs ((long) (ctx->curX - lastNodeX)) > 10 || abs ((long) (ctx->curY - lastNodeY)) > 10) {
+            HDC devCtx = GetDC (wnd);
+            SelectObject (devCtx, ctx->dashedPen);
+            MoveToEx (devCtx, lastNodeX, lastNodeY, 0);
+            LineTo (devCtx, ctx->curX, ctx->curY);
+        }
+    }
 
     EndPaint (wnd, & data);
 }
@@ -323,6 +382,7 @@ void onSize (HWND wnd, uint16_t width, uint16_t height) {
     Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
 
     MoveWindow (ctx->workspace, 0, 22, width, height - 22, true);
+    GetClientRect (ctx->workspace, & ctx->client);
 }
 
 LRESULT wndProc (HWND wnd, UINT msg, WPARAM param1, LPARAM param2) {
@@ -336,7 +396,7 @@ LRESULT wndProc (HWND wnd, UINT msg, WPARAM param1, LPARAM param2) {
         case WM_CREATE:
             initWindow (wnd, ((CREATESTRUCT *) param2)->lpCreateParams); break;
         case WM_DESTROY:
-            PostQuitMessage (9); break;
+            PostQuitMessage (0); break;
         case WM_SYSCOMMAND:
             if (param1 == SC_CLOSE && queryExit (wnd)) DestroyWindow (wnd);
         default:
@@ -346,18 +406,21 @@ LRESULT wndProc (HWND wnd, UINT msg, WPARAM param1, LPARAM param2) {
     return result;
 }
 
+void realToScreen (HWND wnd, int realX, int realY, int& screenX, int& screenY) {
+    Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
+
+    screenX = EDGE + (uint32_t) ((double) realX * (double) (ctx->client.right - EDGE * 2) / (double) ctx->cfg->param.width);
+    screenY = EDGE + (uint32_t) ((double) realY * (double) (ctx->client.bottom - EDGE * 2) / (double) ctx->cfg->param.height);
+}
+
 bool screenToReal (HWND wnd, int screenX, int screenY, int& realX, int& realY) {
-    RECT client;
+    Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
 
-    GetClientRect (wnd, & client);
-
-    if (screenX < EDGE || screenY < EDGE || (client.right - screenX) < EDGE || (client.bottom - screenY) < EDGE) {
+    if (screenX < EDGE || screenY < EDGE || (ctx->client.right - screenX) < EDGE || (ctx->client.bottom - screenY) < EDGE) {
         return false;
     } else {
-        Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
-
-        realX = (int) ((double) (screenX - EDGE) * (double) ctx->cfg->param.width / (double) (client.right - EDGE * 2));
-        realY = (int) ((double) (screenY - EDGE) * (double) ctx->cfg->param.height / (double) (client.bottom - EDGE * 2));
+        realX = (int) ((double) (screenX - EDGE) * (double) ctx->cfg->param.width / (double) (ctx->client.right - EDGE * 2));
+        realY = (int) ((double) (screenY - EDGE) * (double) ctx->cfg->param.height / (double) (ctx->client.bottom - EDGE * 2));
 
         return true;
     }
@@ -367,9 +430,33 @@ void onMouseMove (HWND wnd, int clientX, int clientY) {
     Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
     int realX, realY;
 
+    ctx->prevX = ctx->curX;
+    ctx->prevY = ctx->curY;
+    ctx->curX = clientX;
+    ctx->curY = clientY;
+
     if (screenToReal (wnd, clientX, clientY, realX, realY)) {
         char msg [100];
-        sprintf (msg, "X: %d; Y: %d", realX, realY);
+        sprintf (msg, "X: %d; Y: %d %d %d", realX, realY, clientX, clientY);
+
+        if (ctx->curCable) {
+            RECT invalid;
+            auto& lastNode = ctx->curCable->nodes.back ();
+            int lastClientX, lastClientY;
+            
+            realToScreen (wnd, lastNode.x, lastNode.y, lastClientX, lastClientY);
+            
+            /*if (abs ((long) (ctx->prevY - clientX)) > 200 || abs ((long) (lastClientY - clientY)) > 200) {
+                InvalidateRect (wnd, 0, 1);
+            } else*/ {
+                invalid.left = min (lastClientX, clientX) - 30;
+                invalid.right = max (lastClientX, clientX) + 30;
+                invalid.top = min (lastClientY, clientY) - 30;
+                invalid.bottom = max (lastClientY, clientY) + 30;
+
+                InvalidateRect (wnd, & invalid, 1);
+            }
+        }
 
         SetWindowText (ctx->position, msg);
     } else {
@@ -379,10 +466,13 @@ void onMouseMove (HWND wnd, int clientX, int clientY) {
 
 void onRightButtonDown (HWND wnd, int x, int y) {
     Ctx *ctx = (Ctx *) GetWindowLongPtr (wnd, GWLP_USERDATA);
-    RECT window;
+    RECT window, parent;
 
     GetWindowRect (wnd, & window);
+    GetWindowRect (GetParent (wnd), & parent);
 
+    ctx->selectedX = x;
+    ctx->selectedY = y;
     ctx->clickX = x + window.left;
     ctx->clickY = y + window.top;
 

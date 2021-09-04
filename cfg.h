@@ -64,29 +64,14 @@ struct Cable {
     static std::string getDefNewName () {
         return std::string ("Cable ") + std::to_string (count++);
     }
-    
+
     Cable (): color ("BLACK"), name (), numOfWires (3) {}
 
     void addNode (uint32_t x, uint32_t y, uint32_t z) {
         nodes.emplace_back (x, y, z);
     }
 
-    void addNode (CableDir direction, uint32_t offset) {
-        uint32_t x = nodes.back ().x;
-        uint32_t y = nodes.back ().y;
-        uint32_t z = nodes.back ().z;
-
-        switch (direction) {
-            case CableDir::GO_LOWER: z -= offset; break;
-            case CableDir::GO_HIGHER: z += offset; break;
-            case CableDir::GO_LEFT: x -= offset; break;
-            case CableDir::GO_UP: y -= offset; break;
-            case CableDir::GO_DOWN: y += offset; break;
-            default: return;
-        }
-
-        nodes.emplace_back (x, y, z);
-    }
+    void addNode (CableDir direction, uint32_t offset);
 
     uint32_t calcLength () {
         return 0;
@@ -124,47 +109,27 @@ inline const char *getWallTypeName (WallType type) {
 struct Ctx {
     HINSTANCE instance;
     Cfg *cfg;
-    uint32_t flags, clickX, clickY;
+    uint32_t flags, clickX, clickY, curX, curY, prevX, prevY, selectedX, selectedY;
+    RECT client;
     union {
         struct {
-            HPEN outsideWall, internalWall, splittingWall;
+            HPEN outsideWall, internalWall, splittingWall, dashedPen;
             HPEN blackPen, redPen, greenPen, bluePen, orangePen, yellowPen, grayPen;
         };
-        HPEN pens [10];
+        HPEN pens [11];
     };
     HWND position, workspace;
     HMENU contextMenu;
     Cable *curCable;
 
-    Ctx (HINSTANCE _instance, Cfg *_cfg): flags (0), instance (_instance), cfg (_cfg), curCable (0) {
-        outsideWall = CreatePen (PS_SOLID, 10, 0);
-        internalWall = CreatePen (PS_SOLID, 5, 0);
-        splittingWall = CreatePen (PS_SOLID, 2, 0);
-        blackPen = CreatePen (PS_SOLID, 1, 0);
-        redPen = CreatePen (PS_SOLID, 1, RGB (255, 0, 0));
-        greenPen = CreatePen (PS_SOLID, 1, RGB (0, 255, 0));
-        bluePen = CreatePen (PS_SOLID, 1, RGB (0, 0, 255));
-        orangePen = CreatePen (PS_SOLID, 1, RGB (255, 165, 0));
-        yellowPen = CreatePen (PS_SOLID, 1, RGB (255, 215, 0));
-        grayPen = CreatePen (PS_SOLID, 1, RGB (200, 200, 200));
-        contextMenu = LoadMenu (instance, MAKEINTRESOURCE (IDR_CONTEXT_MENU));
-    }
+    Ctx (HINSTANCE _instance, Cfg *_cfg);
 
     virtual ~Ctx () {
         for (auto i = 0; i < 10; DeleteObject (pens [i]++));
         DestroyMenu (contextMenu);
     }
 
-    HPEN getColredPen (const char *color) {
-        if (stricmp (color, "black") == 0) return blackPen;
-        if (stricmp (color, "red") == 0) return redPen;
-        if (stricmp (color, "green") == 0) return greenPen;
-        if (stricmp (color, "blue") == 0) return bluePen;
-        if (stricmp (color, "orange") == 0) return orangePen;
-        if (stricmp (color, "yellow") == 0) return yellowPen;
-        if (stricmp (color, "gray") == 0) return grayPen;
-        return 0;
-    }
+    HPEN getColoredPen (const char *color);
 };
 
 void loadConfig (Cfg *cfg, char *filePath);

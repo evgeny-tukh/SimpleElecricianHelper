@@ -14,8 +14,8 @@
 #define ID_CANCEL_CABLE                 204
 #define ID_SAVE_CABLE                   205
 #define ID_ADD_CABLE_NODE_HERE          206
-#define ID_RUN_CABLE_UP                 207
-#define ID_RUN_CABLE_DOWN               208
+#define ID_LIFT_CABLE                   207
+#define ID_LOWER_CABLE                  208
 #define ID_EDITING_TEXT                 209
 #define ID_PROMPT                       210
 #define ID_ELEVATION                    211

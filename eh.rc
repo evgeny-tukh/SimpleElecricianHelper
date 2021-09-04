@@ -25,8 +25,8 @@ BEGIN
             MENUITEM "Same y as previous", ID_ADD_SAME_Y
             MENUITEM "Just here", ID_ADD_CABLE_NODE_HERE
         END
-        MENUITEM "Run cable up...", ID_RUN_CABLE_UP
-        MENUITEM "Run cable down...", ID_RUN_CABLE_DOWN
+        MENUITEM "Lift cable...", ID_LIFT_CABLE
+        MENUITEM "Lower cable...", ID_LOWER_CABLE
     END
 END
 

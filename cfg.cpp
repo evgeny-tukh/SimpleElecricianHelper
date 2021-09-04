@@ -42,6 +42,7 @@ void loadConfig (Cfg *cfg, char *filePath) {
     char cfgPath [MAX_PATH];
 
     cfg->walls.clear ();
+    cfg->cables.clear ();
 
     if (filePath) {
         if (!PathFileExists (filePath)) return;        
@@ -227,3 +228,57 @@ void saveConfig (Cfg *cfg, char *filePath) {
     }
 }
 
+void Cable::addNode (CableDir direction, uint32_t offset) {
+    uint32_t x = nodes.back ().x;
+    uint32_t y = nodes.back ().y;
+    uint32_t z = nodes.back ().z;
+
+    switch (direction) {
+        case CableDir::GO_LOWER: z -= offset; break;
+        case CableDir::GO_HIGHER: z += offset; break;
+        case CableDir::GO_LEFT: x -= offset; break;
+        case CableDir::GO_UP: y -= offset; break;
+        case CableDir::GO_DOWN: y += offset; break;
+        default: return;
+    }
+
+    nodes.emplace_back (x, y, z);
+}
+
+Ctx::Ctx (HINSTANCE _instance, Cfg *_cfg):
+    flags (0),
+    instance (_instance),
+    cfg (_cfg),
+    curCable (0),
+    curX (0),
+    curY (0),
+    clickX (0),
+    clickY (0),
+    prevX (0),
+    prevY (0),
+    selectedX (0),
+    selectedY (0) {
+    outsideWall = CreatePen (PS_SOLID, 10, 0);
+    internalWall = CreatePen (PS_SOLID, 5, 0);
+    splittingWall = CreatePen (PS_SOLID, 2, 0);
+    blackPen = CreatePen (PS_SOLID, 2, 0);
+    redPen = CreatePen (PS_SOLID, 2, RGB (255, 0, 0));
+    greenPen = CreatePen (PS_SOLID, 2, RGB (0, 255, 0));
+    bluePen = CreatePen (PS_SOLID, 2, RGB (0, 0, 255));
+    orangePen = CreatePen (PS_SOLID, 2, RGB (255, 165, 0));
+    yellowPen = CreatePen (PS_SOLID, 2, RGB (255, 215, 0));
+    grayPen = CreatePen (PS_SOLID, 2, RGB (200, 200, 200));
+    dashedPen = CreatePen (PS_DASH, 1, RGB (0, 0, 255));
+    contextMenu = LoadMenu (instance, MAKEINTRESOURCE (IDR_CONTEXT_MENU));
+}
+
+HPEN Ctx::getColoredPen (const char *color) {
+    if (stricmp (color, "black") == 0) return blackPen;
+    if (stricmp (color, "red") == 0) return redPen;
+    if (stricmp (color, "green") == 0) return greenPen;
+    if (stricmp (color, "blue") == 0) return bluePen;
+    if (stricmp (color, "orange") == 0) return orangePen;
+    if (stricmp (color, "yellow") == 0) return yellowPen;
+    if (stricmp (color, "gray") == 0) return grayPen;
+    return 0;
+}
